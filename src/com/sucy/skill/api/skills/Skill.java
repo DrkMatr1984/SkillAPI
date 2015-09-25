@@ -2,6 +2,7 @@ package com.sucy.skill.api.skills;
 
 import com.rit.sucy.config.Filter;
 import com.rit.sucy.config.FilterType;
+import com.rit.sucy.config.parse.DataSection;
 import com.rit.sucy.text.TextFormatter;
 import com.rit.sucy.version.VersionManager;
 import com.sucy.skill.SkillAPI;
@@ -18,7 +19,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -154,7 +154,7 @@ public abstract class Skill
      */
     public boolean canAutoLevel()
     {
-        return getCost(0) == 0 && maxLevel == 1;
+        return getCost(0) == 0 && getCost(1) == 0;
     }
 
     /**
@@ -394,6 +394,7 @@ public abstract class Skill
                     Object nextValue = getAttr(attr, Math.min(skillData.getLevel() + 1, maxLevel));
                     if (attr.equals("level") || attr.equals("cost"))
                     {
+                        nextValue = (int)Math.floor(Float.parseFloat(nextValue.toString()));
                         currValue = nextValue;
                     }
 
@@ -482,7 +483,12 @@ public abstract class Skill
      */
     protected Object getAttr(String key, int level)
     {
-        return settings.getObj(key, level);
+        Object result = settings.getObj(key, level);
+        if (result instanceof Double)
+        {
+            return FORMAT.format((double) (Double) result);
+        }
+        return result;
     }
 
     /**
@@ -577,7 +583,7 @@ public abstract class Skill
      *
      * @param config config to save to
      */
-    public void save(ConfigurationSection config)
+    public void save(DataSection config)
     {
         config.set(NAME, name);
         config.set(TYPE, type.replace(ChatColor.COLOR_CHAR, '&'));
@@ -600,10 +606,10 @@ public abstract class Skill
      *
      * @param config config to save to
      */
-    public void softSave(ConfigurationSection config)
+    public void softSave(DataSection config)
     {
 
-        boolean neededOnly = config.getKeys(false).size() > 0;
+        boolean neededOnly = config.keys().size() > 0;
         if (!neededOnly)
         {
             save(config);
@@ -615,7 +621,7 @@ public abstract class Skill
      *
      * @param config config to load from
      */
-    public void load(ConfigurationSection config)
+    public void load(DataSection config)
     {
         name = config.getString(NAME, name);
         type = TextFormatter.colorString(config.getString(TYPE, name));
@@ -630,13 +636,13 @@ public abstract class Skill
         if (config.isList(DESC))
         {
             description.clear();
-            description.addAll(config.getStringList(DESC));
+            description.addAll(config.getList(DESC));
         }
         if (config.isList(LAYOUT))
         {
-            iconLore = TextFormatter.colorStringList(config.getStringList(LAYOUT));
+            iconLore = TextFormatter.colorStringList(config.getList(LAYOUT));
         }
 
-        settings.load(config.getConfigurationSection(ATTR));
+        settings.load(config.getSection(ATTR));
     }
 }

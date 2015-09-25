@@ -2,15 +2,20 @@ package com.sucy.skill.data;
 
 import com.rit.sucy.config.CommentedConfig;
 import com.rit.sucy.config.parse.DataSection;
+import com.rit.sucy.player.Protection;
 import com.rit.sucy.text.TextFormatter;
 import com.sucy.skill.SkillAPI;
+import com.sucy.skill.api.skills.Skill;
+import com.sucy.skill.dynamic.DynamicSkill;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.*;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.material.MaterialData;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +68,8 @@ public class Settings
         loadSkillBarSettings();
         loadLoggingSettings();
         loadWorldSettings();
+        loadSaveSettings();
+        loadTargetingSettings();
     }
 
     ///////////////////////////////////////////////////////
@@ -219,16 +226,93 @@ public class Settings
 
     ///////////////////////////////////////////////////////
     //                                                   //
+    //                 Targeting Settings                //
+    //                                                   //
+    ///////////////////////////////////////////////////////
+
+    private static final String TARGET_BASE    = "Targeting.";
+    private static final String TARGET_MONSTER = TARGET_BASE + "monsters-enemy";
+    private static final String TARGET_PASSIVE = TARGET_BASE + "passive-ally";
+    private static final String TARGET_PLAYER  = TARGET_BASE + "player-ally";
+
+    private boolean monsterEnemy;
+    private boolean passiveAlly;
+    private boolean playerAlly;
+
+    /**
+     * Checks whether or not something can be attacked
+     *
+     * @param attacker the attacking entity
+     * @param target   the target entity
+     *
+     * @return true if can be attacked, false otherwise
+     */
+    public boolean canAttack(LivingEntity attacker, LivingEntity target)
+    {
+        if (attacker instanceof Player)
+        {
+            if (target instanceof Animals)
+            {
+                if (!(target instanceof Tameable) && passiveAlly)
+                    return false;
+            }
+            else if (target instanceof Monster)
+            {
+                if (monsterEnemy)
+                {
+                    return true;
+                }
+            }
+            else if (target instanceof Player)
+            {
+                if (playerAlly)
+                    return false;
+            }
+        }
+        return Protection.canAttack(attacker, target);
+    }
+
+    /**
+     * Checks whether or not something is an ally
+     *
+     * @param attacker the attacking entity
+     * @param target   the target entity
+     *
+     * @return true if an ally, false otherwise
+     */
+    public boolean isAlly(LivingEntity attacker, LivingEntity target)
+    {
+        return !canAttack(attacker, target);
+    }
+
+    private void loadTargetingSettings()
+    {
+        monsterEnemy = config.getBoolean(TARGET_MONSTER);
+        passiveAlly = config.getBoolean(TARGET_PASSIVE);
+        playerAlly = config.getBoolean(TARGET_PLAYER);
+    }
+
+    ///////////////////////////////////////////////////////
+    //                                                   //
     //                  Saving Settings                  //
     //                                                   //
     ///////////////////////////////////////////////////////
 
     private static final String SAVE_BASE = "Saving.";
     private static final String SAVE_AUTO = SAVE_BASE + "auto-save";
-    private static final String SAVE_MINS = SAVE_AUTO + "minutes";
+    private static final String SAVE_MINS = SAVE_BASE + "minutes";
+    private static final String SAVE_SQL  = SAVE_BASE + "sql-database";
+    private static final String SAVE_SQLD = SAVE_BASE + "sql-details";
 
     private boolean auto;
+    private boolean useSql;
     private int     minutes;
+
+    private String sqlHost;
+    private String sqlPort;
+    private String sqlDatabase;
+    private String sqlUser;
+    private String sqlPass;
 
     /**
      * Checks whether or not auto saving is enabled
@@ -250,10 +334,81 @@ public class Settings
         return minutes * 60 * 20;
     }
 
+    /**
+     * Checks whether or not the plugin is using SQL Database saving
+     *
+     * @return true if enabled, false otherwise
+     */
+    public boolean isUseSql()
+    {
+        return useSql;
+    }
+
+    /**
+     * Retrieves the host IP for the database
+     *
+     * @return host IP for SQL database
+     */
+    public String getSQLHost()
+    {
+        return sqlHost;
+    }
+
+    /**
+     * Retrieves the host port for the database
+     *
+     * @return host port for SQL database
+     */
+    public String getSQLPort()
+    {
+        return sqlPort;
+    }
+
+    /**
+     * Retrieves the name of the SQL database
+     *
+     * @return SQL database name
+     */
+    public String getSQLDatabase()
+    {
+        return sqlDatabase;
+    }
+
+    /**
+     * Retrieves the username for the database credentials
+     *
+     * @return SQL database username
+     */
+    public String getSQLUser()
+    {
+        return sqlUser;
+    }
+
+    /**
+     * Retrieves the password for the database credentials
+     *
+     * @return SQL database password
+     */
+    public String getSQLPass()
+    {
+        return sqlPass;
+    }
+
     private void loadSaveSettings()
     {
         auto = config.getBoolean(SAVE_AUTO);
         minutes = config.getInt(SAVE_MINS);
+        useSql = config.getBoolean(SAVE_SQL);
+
+        if (useSql)
+        {
+            DataSection details = config.getSection(SAVE_SQLD);
+            sqlHost = details.getString("host");
+            sqlPort = details.getString("port");
+            sqlDatabase = details.getString("database");
+            sqlUser = details.getString("username");
+            sqlPass = details.getString("password");
+        }
     }
 
     ///////////////////////////////////////////////////////
@@ -263,17 +418,19 @@ public class Settings
     ///////////////////////////////////////////////////////
 
     private static final String CLASS_BASE   = "Classes.";
-    private static final String CLASS_MODIFY = CLASS_BASE + "modify-hp";
+    private static final String CLASS_MODIFY = CLASS_BASE + "modify-health";
     private static final String CLASS_HP     = CLASS_BASE + "classless-hp";
     private static final String CLASS_SHOW   = CLASS_BASE + "show-auto-skills";
     private static final String CLASS_ATTRIB = CLASS_BASE + "attributes-enabled";
     private static final String CLASS_REFUND = CLASS_BASE + "attributes-downgrade";
+    private static final String CLASS_LEVEL  = CLASS_BASE + "level-up-skill";
 
     private boolean modifyHealth;
     private int     defaultHealth;
     private boolean showAutoSkills;
     private boolean attributesEnabled;
     private boolean attributesDowngrade;
+    private String  levelUpSkill;
 
     /**
      * Checks whether or not SkillAPI should modify the max health of players
@@ -325,6 +482,28 @@ public class Settings
         return attributesDowngrade;
     }
 
+    /**
+     * Checks whether or not the plugin has a valid skill for
+     * level up effects loaded.
+     *
+     * @return true if one is available, false otherwise
+     */
+    public boolean hasLevelUpEffect()
+    {
+        return getLevelUpSkill() != null;
+    }
+
+    /**
+     * Retrieves the skill used for level up effects
+     *
+     * @return skill for level up effects
+     */
+    public DynamicSkill getLevelUpSkill()
+    {
+        Skill skill = SkillAPI.getSkill(levelUpSkill);
+        return (skill instanceof DynamicSkill) ? (DynamicSkill) skill : null;
+    }
+
     private void loadClassSettings()
     {
         modifyHealth = config.getBoolean(CLASS_MODIFY);
@@ -332,6 +511,7 @@ public class Settings
         showAutoSkills = config.getBoolean(CLASS_SHOW);
         attributesEnabled = config.getBoolean(CLASS_ATTRIB);
         attributesDowngrade = config.getBoolean(CLASS_REFUND);
+        levelUpSkill = config.getString(CLASS_LEVEL);
     }
 
     ///////////////////////////////////////////////////////
@@ -383,6 +563,9 @@ public class Settings
     private static final String SKILL_DOWNGRADE = SKILL_BASE + "allow-downgrade";
     private static final String SKILL_MESSAGE   = SKILL_BASE + "show-messages";
     private static final String SKILL_RADIUS    = SKILL_BASE + "message-radius";
+    private static final String SKILL_BLOCKS    = SKILL_BASE + "block-filter";
+
+    private ArrayList<Material> filteredBlocks;
 
     private boolean allowDowngrade;
     private boolean showSkillMessages;
@@ -418,11 +601,36 @@ public class Settings
         return messageRadius;
     }
 
+    /**
+     * Retrieves the list of filtered blocks
+     *
+     * @return list of blocks
+     */
+    public List<Material> getFilteredBlocks()
+    {
+        return filteredBlocks;
+    }
+
     private void loadSkillSettings()
     {
         allowDowngrade = config.getBoolean(SKILL_DOWNGRADE);
         showSkillMessages = config.getBoolean(SKILL_MESSAGE);
         messageRadius = config.getInt(SKILL_RADIUS);
+
+        filteredBlocks = new ArrayList<Material>();
+        List<String> list = config.getList(SKILL_BLOCKS);
+        for (String item : list)
+        {
+            try
+            {
+                Material mat = Material.valueOf(item.toUpperCase().replace(' ', '_'));
+                filteredBlocks.add(mat);
+            }
+            catch (Exception ex)
+            {
+                Bukkit.getLogger().info("Invalid block type \"" + item + "\"");
+            }
+        }
     }
 
     ///////////////////////////////////////////////////////
@@ -431,11 +639,17 @@ public class Settings
     //                                                   //
     ///////////////////////////////////////////////////////
 
-    private static final String ITEM_BASE  = "Items.";
-    private static final String ITEM_LORE  = ITEM_BASE + "lore-requirements";
-    private static final String ITEM_CHECK = ITEM_BASE + "players-per-check";
+    private static final String ITEM_BASE    = "Items.";
+    private static final String ITEM_LORE    = ITEM_BASE + "lore-requirements";
+    private static final String ITEM_CLASS   = ITEM_BASE + "lore-class-text";
+    private static final String ITEM_LEVEL   = ITEM_BASE + "lore-level-text";
+    private static final String ITEM_EXCLUDE = ITEM_BASE + "lore-exclude-text";
+    private static final String ITEM_CHECK   = ITEM_BASE + "players-per-check";
 
     private boolean checkLore;
+    private String  loreClassText;
+    private String  loreLevelText;
+    private String  loreExcludeText;
     private int     playersPerCheck;
 
     /**
@@ -446,6 +660,36 @@ public class Settings
     public boolean isCheckLore()
     {
         return checkLore;
+    }
+
+    /**
+     * Retrieves the text used for class requirements on items
+     *
+     * @return lore text for class requirements
+     */
+    public String getLoreClassText()
+    {
+        return loreClassText;
+    }
+
+    /**
+     * Retrieves the text used for level requirements on items
+     *
+     * @return lore text for level requirements
+     */
+    public String getLoreLevelText()
+    {
+        return loreLevelText;
+    }
+
+    /**
+     * Retrieves the text used for excluded classes on items
+     *
+     * @return lore text for excluded classes
+     */
+    public String getLoreExcludeText()
+    {
+        return loreExcludeText;
     }
 
     /**
@@ -461,6 +705,9 @@ public class Settings
     private void loadItemSettings()
     {
         checkLore = config.getBoolean(ITEM_LORE);
+        loreClassText = config.getString(ITEM_CLASS);
+        loreLevelText = config.getString(ITEM_LEVEL);
+        loreExcludeText = config.getString(ITEM_EXCLUDE);
         playersPerCheck = config.getInt(ITEM_CHECK);
     }
 
@@ -470,16 +717,22 @@ public class Settings
     //                                                   //
     ///////////////////////////////////////////////////////
 
-    private static final String GUI_BASE  = "GUI.";
-    private static final String GUI_OLD   = GUI_BASE + "old-health-bar";
-    private static final String GUI_BAR   = GUI_BASE + "use-level-bar";
-    private static final String GUI_BOARD = GUI_BASE + "scoreboard-enabled";
-    private static final String GUI_NAME  = GUI_BASE + "show-class-name";
-    private static final String GUI_LEVEL = GUI_BASE + "show-class-level";
-    private static final String GUI_MAP   = GUI_BASE + "map-tree-enabled";
+    private static final String GUI_BASE   = "GUI.";
+    private static final String GUI_OLD    = GUI_BASE + "old-health-bar";
+    private static final String GUI_LVLBAR = GUI_BASE + "level-bar";
+    private static final String GUI_FOOD   = GUI_BASE + "food-bar";
+    private static final String GUI_ACTION = GUI_BASE + "use-action-bar";
+    private static final String GUI_TEXT   = GUI_BASE + "action-bar-text";
+    private static final String GUI_BOARD  = GUI_BASE + "scoreboard-enabled";
+    private static final String GUI_NAME   = GUI_BASE + "show-class-name";
+    private static final String GUI_LEVEL  = GUI_BASE + "show-class-level";
+    private static final String GUI_MAP    = GUI_BASE + "map-tree-enabled";
 
     private boolean oldHealth;
-    private boolean useLevelBar;
+    private String  levelBar;
+    private String  foodBar;
+    private boolean useActionBar;
+    private String  actionText;
     private boolean showScoreboard;
     private boolean showClassName;
     private boolean showClassLevel;
@@ -496,13 +749,43 @@ public class Settings
     }
 
     /**
-     * Checks whether or not the level bar is to be used for class level
+     * Gets the setting for using the level bar
      *
-     * @return true if enabled, false otherwise
+     * @return level bar setting
      */
-    public boolean isUseLevelBar()
+    public String getLevelBar()
     {
-        return useLevelBar;
+        return levelBar;
+    }
+
+    /**
+     * Gets the setting for using the food bar
+     *
+     * @return food bar setting
+     */
+    public String getFoodBar()
+    {
+        return foodBar;
+    }
+
+    /**
+     * Checks whether or not the action bar is being used
+     *
+     * @return true if used, false otherwise
+     */
+    public boolean isUseActionBar()
+    {
+        return useActionBar;
+    }
+
+    /**
+     * Gets the text to display on the action bar
+     *
+     * @return action bar text
+     */
+    public String getActionText()
+    {
+        return actionText;
     }
 
     /**
@@ -550,7 +833,10 @@ public class Settings
     private void loadGUISettings()
     {
         oldHealth = config.getBoolean(GUI_OLD);
-        useLevelBar = config.getBoolean(GUI_BAR);
+        levelBar = config.getString(GUI_LVLBAR);
+        foodBar = config.getString(GUI_FOOD);
+        useActionBar = config.getBoolean(GUI_ACTION);
+        actionText = config.getString(GUI_TEXT);
         showScoreboard = config.getBoolean(GUI_BOARD);
         showClassName = config.getBoolean(GUI_NAME);
         showClassLevel = config.getBoolean(GUI_LEVEL);
@@ -873,11 +1159,20 @@ public class Settings
         unassigned.setItemMeta(meta);
 
         DataSection layout = bar.getSection("layout");
+        int skillCount = 0;
         for (int i = 0; i < 9; i++)
         {
             DataSection slot = layout.getSection((i + 1) + "");
             defaultBarLayout[i] = slot.getBoolean("skill", i <= 5);
             lockedSlots[i] = slot.getBoolean("locked", false);
+            if (defaultBarLayout[i]) {
+                skillCount++;
+            }
+        }
+        if (skillCount == 9) {
+            Bukkit.getLogger().severe("Invalid Skill Bar Setup - Cannot have all 9 skill slots!");
+            Bukkit.getLogger().severe("  -> Setting last slot to be a weapon slot");
+            defaultBarLayout[8] = false;
         }
     }
 

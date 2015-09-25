@@ -2,7 +2,6 @@ package com.sucy.skill.api.player;
 
 import com.rit.sucy.config.FilterType;
 import com.rit.sucy.items.InventoryManager;
-import com.rit.sucy.player.Protection;
 import com.rit.sucy.player.TargetHelper;
 import com.rit.sucy.version.VersionManager;
 import com.rit.sucy.version.VersionPlayer;
@@ -200,15 +199,36 @@ public final class PlayerData
      */
     public void upAttribute(String key)
     {
-        if (attribPoints > 0)
+        key = key.toLowerCase();
+        int current = getAttribute(key);
+        int max = SkillAPI.getAttributeManager().getAttribute(key).getMax();
+        if (attribPoints > 0 && current < max)
         {
             PlayerUpAttributeEvent event = new PlayerUpAttributeEvent(this, key);
             Bukkit.getPluginManager().callEvent(event);
             if (event.isCancelled()) return;
 
-            key = key.toLowerCase();
-            attributes.put(key, getAttribute(key) + 1);
+            attributes.put(key, current + 1);
             attribPoints--;
+        }
+    }
+
+    /**
+     * Gives the player attribute points without costing
+     * attribute points.
+     *
+     * @param key    attribute to give points for
+     * @param amount amount to give
+     */
+    public void giveAttribute(String key, int amount)
+    {
+        key = key.toLowerCase();
+        int current = getAttribute(key);
+        int max = SkillAPI.getAttributeManager().getAttribute(key).getMax();
+        amount = Math.min(amount, max - current);
+        if (amount > 0)
+        {
+            attributes.put(key, current + amount);
         }
     }
 
@@ -228,8 +248,34 @@ public final class PlayerData
             Bukkit.getPluginManager().callEvent(event);
             if (event.isCancelled()) return;
 
-            attributes.put(key, getAttribute(key) - 1);
-            attribPoints++;
+            int current = getAttribute(key);
+            attribPoints += 1;
+            attributes.put(key, current - 1);
+            if (current - 1 <= 0) attributes.remove(key);
+            AttributeListener.updatePlayer(this);
+        }
+    }
+
+    /**
+     * Refunds all spent attribute points for a specific attribute
+     */
+    public void refundAttributes(String key)
+    {
+        key = key.toLowerCase();
+        attribPoints += getAttribute(key);
+        attributes.remove(key);
+        AttributeListener.updatePlayer(this);
+    }
+
+    /**
+     * Refunds all spent attribute points
+     */
+    public void refundAttributes()
+    {
+        ArrayList<String> keys = new ArrayList<String>(attributes.keySet());
+        for (String key : keys)
+        {
+            refundAttributes(key);
         }
     }
 
@@ -258,7 +304,8 @@ public final class PlayerData
      *
      * @param amount amount of points to have
      */
-    public void setAttribPoints(int amount) {
+    public void setAttribPoints(int amount)
+    {
         attribPoints = amount;
     }
 
@@ -273,6 +320,7 @@ public final class PlayerData
     public double scaleStat(String stat, double value)
     {
         AttributeManager manager = SkillAPI.getAttributeManager();
+        if (manager == null) return value;
         for (String key : manager.getKeys())
         {
             int amount = getAttribute(key);
@@ -297,6 +345,7 @@ public final class PlayerData
     public double scaleDynamic(EffectComponent component, String key, double value, boolean self)
     {
         AttributeManager manager = SkillAPI.getAttributeManager();
+        if (manager == null) return value;
         for (String attr : manager.getKeys())
         {
             int amount = getAttribute(attr);
@@ -434,16 +483,35 @@ public final class PlayerData
             PlayerSkill data = new PlayerSkill(this, skill, parent);
             combos.addSkill(skill);
             skills.put(key, data);
-            int lastLevel = 0;
-            while (data.getData().canAutoLevel() && !data.isMaxed())
+            autoLevel(skill);
+        }
+    }
+
+    /**
+     * Attempts to auto-level any skills that are able to do so
+     */
+    public void autoLevel()
+    {
+        for (PlayerSkill skill : skills.values())
+        {
+            autoLevel(skill.getData());
+        }
+    }
+
+    private void autoLevel(Skill skill)
+    {
+        PlayerSkill data = skills.get(skill.getKey());
+        if (data == null) return;
+
+        int lastLevel = data.getLevel();
+        while (data.getData().canAutoLevel() && !data.isMaxed() && data.getLevelReq() <= data.getPlayerClass().getLevel())
+        {
+            upgradeSkill(skill);
+            if (lastLevel == data.getLevel())
             {
-                upgradeSkill(skill);
-                if (lastLevel == data.getLevel())
-                {
-                    break;
-                }
-                lastLevel++;
+                break;
             }
+            lastLevel++;
         }
     }
 
@@ -517,6 +585,7 @@ public final class PlayerData
             if (data.getLevel() == 1)
             {
                 Bukkit.getPluginManager().callEvent(new PlayerSkillUnlockEvent(this, data));
+                this.autoLevel();
             }
 
             return true;
@@ -547,6 +616,12 @@ public final class PlayerData
         // Must be a valid available skill
         PlayerSkill data = skills.get(skill.getName().toLowerCase());
         if (data == null)
+        {
+            return false;
+        }
+
+        // Must not be a free skill
+        if (data.getCost() == 0)
         {
             return false;
         }
@@ -758,7 +833,6 @@ public final class PlayerData
             giveSkill(skill, classData);
         }
 
-        updateLevelBar();
         updateHealthAndMana(getPlayer());
         updateScoreboard();
         return classes.get(rpgClass.getGroup());
@@ -774,7 +848,9 @@ public final class PlayerData
      */
     public boolean isExactClass(RPGClass rpgClass)
     {
-        return rpgClass != null && classes.get(rpgClass.getGroup()).getData() == rpgClass;
+        if (rpgClass == null) return false;
+        PlayerClass c = classes.get(rpgClass.getGroup());
+        return (c != null) && (c.getData() == rpgClass);
     }
 
     /**
@@ -792,7 +868,10 @@ public final class PlayerData
             return false;
         }
 
-        RPGClass temp = classes.get(rpgClass.getGroup()).getData();
+        PlayerClass pc = classes.get(rpgClass.getGroup());
+        if (pc == null) return false;
+
+        RPGClass temp = pc.getData();
         while (temp != null)
         {
             if (temp == rpgClass)
@@ -858,7 +937,6 @@ public final class PlayerData
             }
 
             // Update GUI features
-            updateLevelBar();
             if (getPlayer() != null)
             {
                 ClassBoardManager.clear(new VersionPlayer(getPlayer()));
@@ -875,6 +953,7 @@ public final class PlayerData
         {
             setClass(rpgClass);
         }
+        updateHealthAndMana(player.getPlayer());
     }
 
     /**
@@ -963,7 +1042,6 @@ public final class PlayerData
         {
             playerClass.giveExp(amount, source);
         }
-        updateLevelBar();
     }
 
     /**
@@ -979,7 +1057,6 @@ public final class PlayerData
                 playerClass.loseExp(penalty);
             }
         }
-        updateLevelBar();
     }
 
     /**
@@ -1006,7 +1083,6 @@ public final class PlayerData
                 playerClass.giveExp(exp, source);
             }
         }
-        updateLevelBar();
         updateHealthAndMana(getPlayer());
     }
 
@@ -1061,11 +1137,12 @@ public final class PlayerData
         {
             health = 20;
         }
-        VersionManager.setMaxHealth(player, health);
+        if (SkillAPI.getSettings().isModifyHealth())
+            VersionManager.setMaxHealth(player, health);
         mana = Math.min(mana, maxMana);
 
         // Health scaling is available starting with 1.6.2
-        if (VersionManager.isVersionAtLeast(VersionManager.V1_6_2))
+        if (SkillAPI.getSettings().isModifyHealth() && VersionManager.isVersionAtLeast(VersionManager.V1_6_2))
         {
             if (SkillAPI.getSettings().isOldHealth())
             {
@@ -1292,10 +1369,10 @@ public final class PlayerData
      */
     public boolean bind(Material mat, PlayerSkill skill)
     {
-        // Make sure the skill is owned by the player
-        if (skill != null && skill.getPlayerData() != this)
+        // Special cases
+        if (mat == null || (skill != null && skill.getPlayerData() != this))
         {
-            throw new IllegalArgumentException("That skill does not belong to this player!");
+            return false;
         }
 
         PlayerSkill bound = getBoundSkill(mat);
@@ -1390,33 +1467,6 @@ public final class PlayerData
         if (main != null && !init)
         {
             ClassBoardManager.update(this, main.getData().getPrefix(), main.getData().getPrefixColor());
-        }
-    }
-
-    /**
-     * Updates the level bar for the player if they're online and
-     * the setting is enabled. The level bar will be set to the
-     * level and experience progress of the main group's profession.
-     * If the main group doesn't have a profession, this will fall back
-     * to the first profession found or set the level to 0 if not
-     * professed as any class.
-     */
-    public void updateLevelBar()
-    {
-        Player player = getPlayer();
-        if (player != null && SkillAPI.getSettings().isUseLevelBar())
-        {
-            if (hasClass())
-            {
-                PlayerClass c = getMainClass();
-                player.setLevel(c.getLevel());
-                player.setExp((float) (c.getExp() / c.getRequiredExp()));
-            }
-            else
-            {
-                player.setLevel(0);
-                player.setExp(0);
-            }
         }
     }
 
@@ -1584,7 +1634,7 @@ public final class PlayerData
             {
                 try
                 {
-                    if (((TargetSkill) skill.getData()).cast(p, target, level, Protection.isAlly(p, target)))
+                    if (((TargetSkill) skill.getData()).cast(p, target, level, !SkillAPI.getSettings().canAttack(p, target)))
                     {
                         skill.startCooldown();
                         if (SkillAPI.getSettings().isShowSkillMessages())

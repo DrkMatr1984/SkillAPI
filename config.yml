@@ -23,6 +23,25 @@ Accounts:
   perm-accounts:
   - 'skillapi.account.admin:10'
 #
+# While targeting settings aren't necessary most of the time,
+# they can help make running ally checks much faster if
+# you are able to use them.
+Targeting:
+  #
+  # Whether or not all monsters are enemies.
+  # If you are using pets that include zombies/spiders/etc,
+  # you shouldn't enable this.
+  monsters-enemy: false
+  #
+  # Whether or not all passive mobs are allies.
+  # If there are custom passive mobs that you can fight,
+  # you should not enable this.
+  passive-ally: false
+  #
+  # Whether or not all players are allies.
+  # If you have any PvP, this should not be enabled.
+  player-ally: false
+#
 Saving:
   #
   # Whether or not to auto save data periodically
@@ -30,6 +49,17 @@ Saving:
   #
   # How often to auto-save in minutes
   minutes: 30
+  #
+  # Whether or not to use an SQL database to save
+  sql-database: false
+  #
+  # Details for connecting to the database
+  sql-details:
+    host: localhost
+    port: 54321
+    database: plugins
+    username: username
+    password: password
 #
 Classes:
   #
@@ -47,6 +77,12 @@ Classes:
   #
   # Whether or not attributes can be refunded
   attributes-downgrade: false
+  #
+  # This casts the dynamic skill for the player when they level up,
+  # allowing you to use dynamic mechanics for level up effects. If
+  # there is no existing dynamic skill with the name, no effect
+  # will be played. For level-specific effects, use the level condition.
+  level-up-skill: 'lvlup'
 #
 Mana:
   #
@@ -66,11 +102,29 @@ Skills:
   #
   # The radius in which to show cast messages to nearby players
   message-radius: 20
+  #
+  # Blocks to ignore when using the Block mechanic in dynamic skills
+  block-filter:
+  - 'chest'
+  - 'ender chest'
+  - 'trapped chest'
+  - 'redstone*'
+  - 'wall sign'
+  - 'sign post'
 #
 Items:
   #
   # Whether or not to use SkillAPI's lore requirements feature
   lore-requirements: true
+  #
+  # The text used for class requirements in the lore
+  lore-class-text: 'Class Req: '
+  #
+  # the text used for level requirements in the lore
+  lore-level-text: 'Level Req: '
+  #
+  # The text used for excluded classes in the lore
+  lore-exclude-text: 'Excluded Class: '
   #
   # How many players to check for the requirements each tick
   # This should be increased on larger servers to prevent
@@ -83,9 +137,34 @@ GUI:
   # This does not affect total health, only the display
   old-health-bar: false
   #
-  # Whether or not to display class level/experience in the level bar
-  # This will override enchanting experience so use with caution
-  use-level-bar: false
+  # This is what to display using the level bar, if anything.
+  # Options are: none, mana, level
+  level-bar: none
+  #
+  # This is what to display using the food bar, if anything.
+  # Options are: none, mana, exp
+  food-bar: none
+  #
+  # Whether or not to use the action bar
+  use-action-bar: false
+  #
+  # The text to display on the action bar.
+  # Available filters:
+  #   {combo}       - the player's current click combo
+  #   {class}       - the player's main class name
+  #   {level}       - the player's main class level
+  #   {exp}         - the player's main class exp
+  #   {expReq}      - the player's main class required experience
+  #   {expLeft}     - the player's main class experience until the next level
+  #   {health}      - the player's current health
+  #   {maxHealth}   - the player's max health
+  #   {mana}        - the player's current mana
+  #   {maxMana}     - the player's max mana
+  #   {name}        - the name of the player
+  #   {attr}        - the player's attribute points
+  #   {sp}          - the player's main class skill points
+  #   {value:<key>} - a skill value
+  action-bar-text: '{combo}'
   #
   # Whether or not to display class information on a scoreboard
   scoreboard-enabled: true

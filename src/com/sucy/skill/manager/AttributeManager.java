@@ -74,7 +74,6 @@ public class AttributeManager
         config.saveDefaultConfig();
 
         DataSection data = config.getConfig();
-        data.dump("attr.yml");
         for (String key : data.keys())
         {
             attributes.put(key.toLowerCase(), new Attribute(data.getSection(key), key));
@@ -92,11 +91,13 @@ public class AttributeManager
         private static final String MECHANIC  = "mechanic";
         private static final String TARGET    = "target";
         private static final String STATS     = "stats";
+        private static final String MAX       = "max";
 
         // Attribute description
         private String    key;
         private String    display;
         private ItemStack icon;
+        private int       max;
 
         // Dynamic global modifiers
         private HashMap<String, AttributeValue> conditions = new HashMap<String, AttributeValue>();
@@ -118,6 +119,7 @@ public class AttributeManager
             this.key = key;
             this.display = data.getString(DISPLAY, key).toLowerCase();
             this.icon = Data.parseIcon(data);
+            this.max = data.getInt(MAX, 999);
 
             // Load dynamic global settings
             DataSection globals = data.getSection(GLOBAL);
@@ -170,6 +172,16 @@ public class AttributeManager
         public ItemStack getIcon()
         {
             return icon;
+        }
+
+        /**
+         * Retrieves the max amount the attribute can be raised to
+         *
+         * @return max attribute amount
+         */
+        public int getMax()
+        {
+            return max;
         }
 
         /**

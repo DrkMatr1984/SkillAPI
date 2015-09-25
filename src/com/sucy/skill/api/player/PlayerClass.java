@@ -11,6 +11,7 @@ import com.sucy.skill.api.event.PlayerExperienceLostEvent;
 import com.sucy.skill.api.event.PlayerGainSkillPointsEvent;
 import com.sucy.skill.api.event.PlayerLevelUpEvent;
 import com.sucy.skill.api.skills.Skill;
+import com.sucy.skill.dynamic.DynamicSkill;
 import com.sucy.skill.language.NotificationNodes;
 import com.sucy.skill.language.RPGFilter;
 import org.bukkit.Bukkit;
@@ -370,6 +371,13 @@ public final class PlayerClass
         if (levels > 0)
         {
             giveLevels(levels);
+
+            // Level up effect
+            if (SkillAPI.getSettings().hasLevelUpEffect())
+            {
+                DynamicSkill skill = SkillAPI.getSettings().getLevelUpSkill();
+                skill.cast(player.getPlayer(), level);
+            }
         }
     }
 
@@ -412,6 +420,7 @@ public final class PlayerClass
 
         // Update health/mana
         getPlayerData().updateHealthAndMana(getPlayerData().getPlayer());
+        getPlayerData().autoLevel();
 
         // Call the event
         PlayerLevelUpEvent event = new PlayerLevelUpEvent(this, amount);

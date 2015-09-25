@@ -1,8 +1,10 @@
 package com.sucy.skill.api.player;
 
+import com.rit.sucy.version.VersionPlayer;
 import com.sucy.skill.SkillAPI;
 import com.sucy.skill.api.event.PlayerAccountChangeEvent;
 import com.sucy.skill.listener.AttributeListener;
+import com.sucy.skill.manager.ClassBoardManager;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
@@ -159,6 +161,7 @@ public class PlayerAccounts
         Player player = getPlayer();
         if (player == null || id == active)
         {
+            active = id;
             return;
         }
         if (id <= getAccountLimit() && id > 0 && !classData.containsKey(id))
@@ -174,6 +177,7 @@ public class PlayerAccounts
                 return;
             }
 
+            ClassBoardManager.clear(new VersionPlayer(player));
             getActiveData().stopPassives(player);
             getActiveData().clearBonuses();
             AttributeListener.clearBonuses(player);
@@ -184,6 +188,8 @@ public class PlayerAccounts
             active = event.getNewID();
             getActiveData().startPassives(player);
             getActiveData().updateScoreboard();
+            getActiveData().updateHealthAndMana(player);
+            AttributeListener.updatePlayer(getActiveData());
             if (getActiveData().hasClass())
             {
                 getActiveData().getSkillBar().setup(player);

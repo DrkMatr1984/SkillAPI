@@ -1,5 +1,6 @@
 package com.sucy.skill.dynamic.mechanic;
 
+import com.sucy.skill.SkillAPI;
 import com.sucy.skill.api.player.PlayerSkill;
 import com.sucy.skill.dynamic.EffectComponent;
 import org.bukkit.Bukkit;
@@ -50,15 +51,21 @@ public class PassiveMechanic extends EffectComponent
             this.caster = caster;
             this.level = level;
 
-            runTaskTimer(Bukkit.getPluginManager().getPlugin("SkillAPI"), 0, period);
+            SkillAPI.schedule(this, 0, period);
         }
 
         @Override
         public void run()
         {
-            if (!caster.isValid() || caster.isDead() || !skill.isActive(caster))
+            for (int i = 0; i < targets.size(); i++) {
+                if (targets.get(i).isDead() || !targets.get(i).isValid()) {
+                    targets.remove(i);
+                }
+            }
+            if (!skill.isActive(caster) || targets.size() == 0)
             {
                 cancel();
+                return;
             }
             else if (caster instanceof Player)
             {
@@ -69,6 +76,7 @@ public class PassiveMechanic extends EffectComponent
                     return;
                 }
             }
+            level = skill.getActiveLevel(caster);
             executeChildren(caster, level, targets);
         }
     }

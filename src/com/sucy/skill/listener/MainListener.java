@@ -11,9 +11,11 @@ import com.sucy.skill.api.util.BuffManager;
 import com.sucy.skill.api.util.Combat;
 import com.sucy.skill.api.util.FlagManager;
 import com.sucy.skill.data.Permissions;
+import com.sucy.skill.dynamic.DynamicSkill;
 import com.sucy.skill.manager.ClassBoardManager;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -76,23 +78,22 @@ public class MainListener implements Listener
     @EventHandler
     public void onJoin(PlayerJoinEvent event)
     {
-        double health = event.getPlayer().getHealth();
-        PlayerData data = SkillAPI.getPlayerData(event.getPlayer());
+        final PlayerData data = SkillAPI.getPlayerData(event.getPlayer());
 
         // Apply player data as long as they have a class
+        data.updateHealthAndMana(event.getPlayer());
         if (data.hasClass() && SkillAPI.getSettings().isWorldEnabled(event.getPlayer().getWorld()))
         {
-            data.updateHealthAndMana(event.getPlayer());
-            data.updateLevelBar();
             data.startPassives(event.getPlayer());
-            data.updateScoreboard();
-        }
 
-        // Attempted workaround for weird health bug
-        // TODO figure out what actually causes it
-        if (health > 0 && health < event.getPlayer().getMaxHealth())
-        {
-            event.getPlayer().setHealth(health);
+            plugin.getServer().getScheduler().runTaskLater(plugin, new Runnable()
+            {
+                @Override
+                public void run()
+                {
+                    data.updateScoreboard();
+                }
+            }, 2);
         }
     }
 
@@ -107,7 +108,10 @@ public class MainListener implements Listener
         FlagManager.clearFlags(event.getPlayer());
         BuffManager.clearData(event.getPlayer());
         Combat.clearData(event.getPlayer());
+        DynamicSkill.clearCastData(event.getPlayer());
 
+        event.getPlayer().setDisplayName(event.getPlayer().getName());
+        event.getPlayer().setMaxHealth(20);
         PlayerData data = SkillAPI.getPlayerData(event.getPlayer());
         if (SkillAPI.getSettings().isWorldEnabled(event.getPlayer().getWorld()))
         {
@@ -126,6 +130,7 @@ public class MainListener implements Listener
     {
         FlagManager.clearFlags(event.getEntity());
         BuffManager.clearData(event.getEntity());
+        DynamicSkill.clearCastData(event.getEntity());
 
         PlayerData data = SkillAPI.getPlayerData(event.getEntity());
         if (data.hasClass() && SkillAPI.getSettings().isWorldEnabled(event.getEntity().getWorld()))
@@ -257,7 +262,7 @@ public class MainListener implements Listener
     public void onExpChange(PlayerExpChangeEvent event)
     {
         // Prevent it from changing the level bar when that is being used to display class level
-        if (SkillAPI.getSettings().isUseLevelBar()
+        if (!SkillAPI.getSettings().getLevelBar().equalsIgnoreCase("none")
             && event.getPlayer().hasPermission(Permissions.EXP)
             && SkillAPI.getSettings().isWorldEnabled(event.getPlayer().getWorld()))
         {
@@ -313,6 +318,22 @@ public class MainListener implements Listener
     }
 
     /**
+     * Cancels food damaging the player when the bar is being used
+     * for GUI features instead of normal hunger.
+     *
+     * @param event event details
+     */
+    @EventHandler
+    public void onStarve(EntityDamageEvent event)
+    {
+        if (event.getCause() == EntityDamageEvent.DamageCause.STARVATION
+            && !SkillAPI.getSettings().getFoodBar().equalsIgnoreCase("none"))
+        {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
      * Applies damage and defense buffs when something takes or deals
      * damage to something else.
      *
@@ -321,7 +342,8 @@ public class MainListener implements Listener
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onDamage(EntityDamageByEntityEvent event)
     {
-        if (event.getCause() == EntityDamageEvent.DamageCause.CUSTOM) return;
+        if (event.getCause() == EntityDamageEvent.DamageCause.CUSTOM
+            || !(event.getEntity() instanceof LivingEntity)) return;
 
         // Damage buff application
         LivingEntity damager = ListenerUtil.getDamager(event);
@@ -358,7 +380,9 @@ public class MainListener implements Listener
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onPhysicalDamage(EntityDamageByEntityEvent event)
     {
-        if (Skill.isSkillDamage() || !(event.getEntity() instanceof LivingEntity) || event.getCause() == EntityDamageEvent.DamageCause.CUSTOM)
+        if (Skill.isSkillDamage()
+            || event.getCause() == EntityDamageEvent.DamageCause.CUSTOM
+            || !(event.getEntity() instanceof LivingEntity) || event.getCause() == EntityDamageEvent.DamageCause.CUSTOM)
         {
             return;
         }
@@ -377,7 +401,8 @@ public class MainListener implements Listener
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onCombat(EntityDamageByEntityEvent event)
     {
-        if (event.getCause() == EntityDamageEvent.DamageCause.CUSTOM) return;
+        if (event.getCause() == EntityDamageEvent.DamageCause.CUSTOM
+            || !(event.getEntity() instanceof LivingEntity)) return;
 
         if (event.getEntity() instanceof Player)
         {
@@ -408,20 +433,31 @@ public class MainListener implements Listener
             data.getSkillBar().clear(event.getPlayer());
             ClassBoardManager.clear(new VersionPlayer(event.getPlayer()));
             event.getPlayer().setHealth(20);
-            if (SkillAPI.getSettings().isUseLevelBar())
+            if (!SkillAPI.getSettings().getLevelBar().equalsIgnoreCase("none"))
             {
                 event.getPlayer().setLevel(0);
                 event.getPlayer().setExp(0);
             }
+            if (!SkillAPI.getSettings().getFoodBar().equalsIgnoreCase("none"))
+            {
+                event.getPlayer().setFoodLevel(20);
+            }
         }
         else if (!oldEnabled && newEnabled)
         {
-            PlayerData data = SkillAPI.getPlayerData(event.getPlayer());
+            final PlayerData data = SkillAPI.getPlayerData(event.getPlayer());
             data.startPassives(event.getPlayer());
             data.getSkillBar().setup(event.getPlayer());
-            data.updateScoreboard();
             data.updateHealthAndMana(event.getPlayer());
-            data.updateLevelBar();
+
+            plugin.getServer().getScheduler().runTaskLater(plugin, new Runnable()
+            {
+                @Override
+                public void run()
+                {
+                    data.updateScoreboard();
+                }
+            }, 1);
         }
     }
 }

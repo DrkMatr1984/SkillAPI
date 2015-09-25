@@ -1,5 +1,6 @@
 package com.sucy.skill.dynamic;
 
+import com.rit.sucy.config.parse.DataSection;
 import com.rit.sucy.text.TextFormatter;
 import com.sucy.skill.api.event.PhysicalDamageEvent;
 import com.sucy.skill.api.event.PlayerLandEvent;
@@ -9,8 +10,8 @@ import com.sucy.skill.api.skills.Skill;
 import com.sucy.skill.api.skills.SkillShot;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.LivingEntity;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
@@ -28,6 +29,8 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
     private final HashMap<Trigger, EffectComponent> components = new HashMap<Trigger, EffectComponent>();
     private final HashMap<String, EffectComponent>  attribKeys = new HashMap<String, EffectComponent>();
     private final HashMap<Integer, Integer>         active     = new HashMap<Integer, Integer>();
+
+    private static final HashMap<Integer, HashMap<String, Object>> castData = new HashMap<Integer, HashMap<String, Object>>();
 
     /**
      * Initializes a new dynamic skill
@@ -62,6 +65,18 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
     }
 
     /**
+     * Retrieves the active level of the caster for the skill
+     *
+     * @param caster caster of the skill
+     *
+     * @return active level of the skill
+     */
+    public int getActiveLevel(LivingEntity caster)
+    {
+        return active.get(caster.getEntityId());
+    }
+
+    /**
      * Sets an attribute key for obtaining attributes used
      * in the skill indicator.
      *
@@ -71,6 +86,36 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
     public void setAttribKey(String key, EffectComponent component)
     {
         attribKeys.put(key, component);
+    }
+
+    /**
+     * Retrieves the cast data for the caster
+     *
+     * @param caster caster to get the data for
+     *
+     * @return cast data for the caster
+     */
+    public static HashMap<String, Object> getCastData(LivingEntity caster)
+    {
+        if (caster == null) return null;
+        HashMap<String, Object> map = castData.get(caster.getEntityId());
+        if (map == null)
+        {
+            map = new HashMap<String, Object>();
+            map.put("caster", caster);
+            castData.put(caster.getEntityId(), map);
+        }
+        return map;
+    }
+
+    /**
+     * Clears any stored cast data for the entity
+     *
+     * @param entity entity to clear cast data for
+     */
+    public static void clearCastData(LivingEntity entity)
+    {
+        castData.remove(entity.getEntityId());
     }
 
     /**
@@ -183,16 +228,25 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
     }
 
     /**
-     * Applies the death trigger effects
+     * Applies the death/kill trigger effects
      *
      * @param event event details
      */
     @EventHandler
     public void onDeath(EntityDeathEvent event)
     {
+        // Death trigger
         if (active.containsKey(event.getEntity().getEntityId()))
         {
+            getCastData(event.getEntity()).put("api-killer", event.getEntity().getKiller());
             trigger(event.getEntity(), event.getEntity(), active.get(event.getEntity().getEntityId()), Trigger.DEATH);
+        }
+
+        // Kill trigger
+        Player player = event.getEntity().getKiller();
+        if (player != null && active.containsKey(player.getEntityId()))
+        {
+            trigger(player, player, active.get(player.getEntityId()), Trigger.KILL);
         }
     }
 
@@ -213,6 +267,7 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
             String name = component.getSettings().getString("type", "").toUpperCase().replace(' ', '_');
             if (event.getCause().name().equals(name))
             {
+                getCastData(target).put("api-taken", event.getDamage());
                 trigger(target, target, active.get(target.getEntityId()), Trigger.ENVIRONMENT_DAMAGE);
             }
         }
@@ -249,6 +304,7 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
             if (event.getDamage() >= min && event.getDamage() <= max
                 && (type.equals("both") || (type.equals("projectile") == projectile)))
             {
+                getCastData(target).put("api-taken", event.getDamage());
                 if (caster)
                 {
                     trigger(target, target, active.get(target.getEntityId()), Trigger.TOOK_PHYSICAL_DAMAGE);
@@ -272,6 +328,7 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
             if (event.getDamage() >= min && event.getDamage() <= max
                 && (type.equals("both") || type.equals("projectile") == projectile))
             {
+                getCastData(damager).put("api-dealt", event.getDamage());
                 if (caster)
                 {
                     trigger(damager, damager, active.get(damager.getEntityId()), Trigger.PHYSICAL_DAMAGE);
@@ -305,6 +362,7 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
 
             if (event.getDamage() >= min && event.getDamage() <= max)
             {
+                getCastData(target).put("api-taken", event.getDamage());
                 if (caster)
                 {
                     trigger(target, target, active.get(event.getTarget().getEntityId()), Trigger.TOOK_SKILL_DAMAGE);
@@ -326,6 +384,7 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
 
             if (event.getDamage() >= min && event.getDamage() <= max)
             {
+                getCastData(damager).put("api-dealt", event.getDamage());
                 if (caster)
                 {
                     trigger(damager, damager, active.get(damager.getEntityId()), Trigger.SKILL_DAMAGE);
@@ -376,6 +435,7 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
         {
             ArrayList<LivingEntity> targets = new ArrayList<LivingEntity>();
             targets.add(target);
+
             return components.get(trigger).execute(user, level, targets);
         }
         return false;
@@ -387,18 +447,18 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
      * @param config config data to load from
      */
     @Override
-    public void load(ConfigurationSection config)
+    public void load(DataSection config)
     {
-        ConfigurationSection triggers = config.getConfigurationSection("components");
+        DataSection triggers = config.getSection("components");
         if (triggers != null)
         {
-            for (String key : triggers.getKeys(false))
+            for (String key : triggers.keys())
             {
                 try
                 {
                     Trigger trigger = Trigger.valueOf(key.toUpperCase().replace(' ', '_').replaceAll("-.+", ""));
                     EffectComponent component = trigger.getComponent();
-                    component.load(this, triggers.getConfigurationSection(key));
+                    component.load(this, triggers.getSection(key));
                     components.put(trigger, component);
                 }
                 catch (Exception ex)
@@ -419,10 +479,10 @@ public class DynamicSkill extends Skill implements SkillShot, PassiveSkill, List
      * @param config config to save to
      */
     @Override
-    public void save(ConfigurationSection config)
+    public void save(DataSection config)
     {
         super.save(config);
-        ConfigurationSection triggers = config.createSection("components");
+        DataSection triggers = config.createSection("components");
         for (Trigger trigger : components.keySet())
         {
             components.get(trigger).save(triggers.createSection(TextFormatter.format(trigger.name())));

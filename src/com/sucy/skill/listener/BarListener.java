@@ -95,7 +95,6 @@ public class BarListener implements Listener
     @EventHandler
     public void onProfess(PlayerClassChangeEvent event)
     {
-
         Player p = event.getPlayerData().getPlayer();
 
         // Professing as a first class sets up the skill bar
@@ -229,7 +228,7 @@ public class BarListener implements Listener
         // Prevent moving skill icons
         if (event.getAction() == InventoryAction.HOTBAR_SWAP || event.getAction() == InventoryAction.HOTBAR_MOVE_AND_READD)
         {
-            if (!skillBar.isWeaponSlot(event.getHotbarButton()))
+            if (!skillBar.isWeaponSlot(event.getHotbarButton()) || !skillBar.isWeaponSlot(event.getSlot()))
             {
                 event.setCancelled(true);
             }

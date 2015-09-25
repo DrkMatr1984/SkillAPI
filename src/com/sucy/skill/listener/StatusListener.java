@@ -59,7 +59,7 @@ public class StatusListener implements Listener
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onMove(PlayerMoveEvent event)
     {
-        if (check(event, event.getPlayer(), StatusFlag.STUN, StatusFlag.ROOT))
+        if (((LivingEntity) event.getPlayer()).isOnGround() && check(event, event.getPlayer(), StatusFlag.STUN, StatusFlag.ROOT))
         {
             event.getPlayer().setVelocity(ZERO);
         }

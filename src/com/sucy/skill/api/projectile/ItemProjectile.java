@@ -85,18 +85,19 @@ public class ItemProjectile extends CustomProjectile
                 if (entity instanceof LivingEntity)
                 {
                     LivingEntity target = (LivingEntity) entity;
-                    if (Protection.canAttack(thrower, target))
+                    boolean ally = Protection.isAlly(getShooter(), target);
+                    if (ally && !this.ally) continue;
+                    if (!ally && !this.enemy) continue;
+
+                    cancel();
+                    ItemProjectileHitEvent event = new ItemProjectileHitEvent(this, target);
+                    Bukkit.getPluginManager().callEvent(event);
+                    if (callback != null)
                     {
-                        cancel();
-                        ItemProjectileHitEvent event = new ItemProjectileHitEvent(this, target);
-                        Bukkit.getPluginManager().callEvent(event);
-                        if (callback != null)
-                        {
-                            callback.callback(this, target);
-                        }
-                        item.remove();
-                        return;
+                        callback.callback(this, target);
                     }
+                    item.remove();
+                    return;
                 }
             }
         }

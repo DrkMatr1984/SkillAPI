@@ -36,6 +36,7 @@ import com.sucy.skill.data.PlayerStats;
 import com.sucy.skill.data.Settings;
 import com.sucy.skill.data.io.ConfigIO;
 import com.sucy.skill.data.io.IOManager;
+import com.sucy.skill.data.io.SQLIO;
 import com.sucy.skill.dynamic.DynamicClass;
 import com.sucy.skill.dynamic.mechanic.WolfMechanic;
 import com.sucy.skill.gui.Menu;
@@ -43,15 +44,15 @@ import com.sucy.skill.hook.PluginChecker;
 import com.sucy.skill.hook.beton.BetonUtil;
 import com.sucy.skill.listener.*;
 import com.sucy.skill.manager.*;
-import com.sucy.skill.task.CooldownTask;
-import com.sucy.skill.task.InventoryTask;
-import com.sucy.skill.task.ManaTask;
-import com.sucy.skill.task.SaveTask;
+import com.sucy.skill.task.*;
+import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.HandlerList;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -83,6 +84,7 @@ public class SkillAPI extends JavaPlugin
     private CooldownTask  cdTask;
     private InventoryTask invTask;
     private SaveTask      saveTask;
+    private GUITask       guiTask;
 
     private boolean enabled = false;
     private boolean loaded  = false;
@@ -119,7 +121,7 @@ public class SkillAPI extends JavaPlugin
         comboManager = new ComboManager();
         registrationManager = new RegistrationManager(this);
         cmd = new CmdManager(this);
-        io = new ConfigIO(this);
+        io = settings.isUseSql() ? new SQLIO(this) : new ConfigIO(this);
         PlayerStats.init();
         ClassBoardManager.registerText();
         ResourceManager.copyQuestsModule();
@@ -145,9 +147,9 @@ public class SkillAPI extends JavaPlugin
         {
             PlayerData data = loadPlayerData(player).getActiveData();
             data.updateHealthAndMana(player);
-            data.updateLevelBar();
             data.updateScoreboard();
         }
+        if (settings.isUseSql()) ((SQLIO) io).cleanup();
 
         // Set up listeners
         new CastListener(this);
@@ -196,6 +198,7 @@ public class SkillAPI extends JavaPlugin
         {
             saveTask = new SaveTask(this);
         }
+        guiTask = new GUITask(this);
 
         loaded = true;
     }
@@ -235,6 +238,11 @@ public class SkillAPI extends JavaPlugin
             saveTask.cancel();
             saveTask = null;
         }
+        if (guiTask.isRunning())
+        {
+            guiTask.cancel();
+            guiTask = null;
+        }
 
         // Clear scoreboards
         ClassBoardManager.clearAll();
@@ -242,6 +250,7 @@ public class SkillAPI extends JavaPlugin
         // Clear skill bars and stop passives before disabling
         for (Player player : getServer().getOnlinePlayers())
         {
+            player.setMaxHealth(20);
             getPlayerData(player).stopPassives(player);
             if (player.getGameMode() != GameMode.CREATIVE && !player.isDead())
             {
@@ -259,9 +268,8 @@ public class SkillAPI extends JavaPlugin
         cmd.clear();
 
         enabled = false;
-        singleton = null;
-
         loaded = false;
+        singleton = null;
     }
 
     /**
@@ -516,12 +524,18 @@ public class SkillAPI extends JavaPlugin
         {
             return null;
         }
+
+        // Already loaded for some reason, no need to load again
+        String id = new VersionPlayer(player).getIdString();
+        if (singleton.players.containsKey(id)) return singleton.players.get(id);
+
+        // Load the data
         PlayerAccounts data = singleton.io.loadData(player);
         for (PlayerData account : data.getAllData().values())
         {
             account.endInit();
         }
-        singleton.players.put(new VersionPlayer(player).getIdString(), data);
+        singleton.players.put(id, data);
         return data;
     }
 
@@ -536,10 +550,7 @@ public class SkillAPI extends JavaPlugin
         {
             return;
         }
-        for (PlayerAccounts data : singleton.players.values())
-        {
-            singleton.io.saveData(data);
-        }
+        singleton.io.saveAll();
     }
 
     /**
@@ -563,15 +574,23 @@ public class SkillAPI extends JavaPlugin
      *
      * @param player player to unload data for
      */
-    public static void unloadPlayerData(Player player)
+    public static void unloadPlayerData(final OfflinePlayer player)
     {
-        if (singleton == null || player == null)
+        if (singleton == null || player == null || !singleton.players.containsKey(new VersionPlayer(player).getIdString()))
         {
             return;
         }
-        PlayerAccounts accounts = getPlayerAccountData(player);
-        singleton.io.saveData(accounts);
-        singleton.players.remove(new VersionPlayer(player).getIdString());
+
+        singleton.getServer().getScheduler().runTaskAsynchronously(singleton, new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                PlayerAccounts accounts = getPlayerAccountData(player);
+                singleton.io.saveData(accounts);
+                singleton.players.remove(new VersionPlayer(player).getIdString());
+            }
+        });
     }
 
     /**
@@ -716,6 +735,31 @@ public class SkillAPI extends JavaPlugin
         for (RPGClass rpgClass : classes)
         {
             addClass(rpgClass);
+        }
+    }
+
+    /**
+     * Schedules a delayed task
+     *
+     * @param runnable the task to schedule
+     * @param delay    the delay in ticks
+     */
+    public static void schedule(BukkitRunnable runnable, int delay) {
+        if (singleton != null) {
+            runnable.runTaskLater(singleton, delay);
+        }
+    }
+
+    /**
+     * Schedules a repeating task
+     *
+     * @param runnable the task to schedule
+     * @param delay    the delay in ticks before the first tick
+     * @param period   how often to run in ticks
+     */
+    public static void schedule(BukkitRunnable runnable, int delay, int period) {
+        if (singleton != null) {
+            runnable.runTaskTimer(singleton, delay, period);
         }
     }
 }

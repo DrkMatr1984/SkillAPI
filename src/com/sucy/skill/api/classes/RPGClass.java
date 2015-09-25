@@ -1,5 +1,6 @@
 package com.sucy.skill.api.classes;
 
+import com.rit.sucy.config.parse.DataSection;
 import com.rit.sucy.text.TextFormatter;
 import com.sucy.skill.SkillAPI;
 import com.sucy.skill.api.Settings;
@@ -12,7 +13,6 @@ import com.sucy.skill.tree.map.MapTree;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.event.Listener;
 import org.bukkit.inventory.ItemStack;
 
@@ -527,7 +527,7 @@ public abstract class RPGClass
      *
      * @param config config to save to
      */
-    public void save(ConfigurationSection config)
+    public void save(DataSection config)
     {
         config.set(NAME, name);
         config.set(PREFIX, prefix.replace(ChatColor.COLOR_CHAR, '&'));
@@ -557,10 +557,9 @@ public abstract class RPGClass
      *
      * @param config config to save to
      */
-    public void softSave(ConfigurationSection config)
+    public void softSave(DataSection config)
     {
-
-        boolean neededOnly = config.getKeys(false).size() > 0;
+        boolean neededOnly = config.keys().size() > 0;
         if (!neededOnly)
         {
             save(config);
@@ -572,7 +571,7 @@ public abstract class RPGClass
      *
      * @param config config to load from
      */
-    public void load(ConfigurationSection config)
+    public void load(DataSection config)
     {
         parent = config.getString(PARENT);
         icon = Data.parseIcon(config);
@@ -587,12 +586,12 @@ public abstract class RPGClass
         tree = DefaultTreeType.getByName(config.getString(TREE, "requirement"));
         manaPlayer = Bukkit.getServer().getOfflinePlayer(TextFormatter.colorString(mana));
 
-        settings.load(config.getConfigurationSection(ATTR));
+        settings.load(config.getSection(ATTR));
 
         if (config.isList(SKILLS))
         {
             skills.clear();
-            for (String name : config.getStringList(SKILLS))
+            for (String name : config.getList(SKILLS))
             {
                 Skill skill = SkillAPI.getSkill(name);
                 if (skill != null)

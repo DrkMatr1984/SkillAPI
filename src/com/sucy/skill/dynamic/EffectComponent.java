@@ -1,5 +1,6 @@
 package com.sucy.skill.dynamic;
 
+import com.rit.sucy.config.parse.DataSection;
 import com.sucy.skill.SkillAPI;
 import com.sucy.skill.api.Settings;
 import com.sucy.skill.api.player.PlayerData;
@@ -8,19 +9,22 @@ import com.sucy.skill.dynamic.condition.*;
 import com.sucy.skill.dynamic.mechanic.*;
 import com.sucy.skill.dynamic.target.*;
 import org.bukkit.Bukkit;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * A component for dynamic skills which takes care of one effect
  */
 public abstract class EffectComponent
 {
+    protected static final Pattern NUMBER = Pattern.compile("-?[0-9]+(\\.[0-9]+)?");
+    protected static final Pattern RANGE  = Pattern.compile("-?[0-9]+(\\.[0-9]+)?-{1,2}[0-9]+(\\.[0-9]+)?");
+
     private static final String ICON_KEY   = "icon-key";
     private static final String COUNTS_KEY = "counts";
 
@@ -90,7 +94,7 @@ public abstract class EffectComponent
      */
     protected double attr(LivingEntity caster, String key, int level, double fallback, boolean self)
     {
-        double value = settings.getAttr(key, level, fallback);
+        double value = getNum(caster, key + "-base", fallback) + level * getNum(caster, key + "-scale", 0);
 
         // Apply global modifiers
         if (SkillAPI.getSettings().isAttributesEnabled() && caster instanceof Player)
@@ -100,6 +104,52 @@ public abstract class EffectComponent
         }
 
         return value;
+    }
+
+    /**
+     * Retrieves a numerical value while using non-numerical values as
+     * keys for the cast data. If the value doesn't exist, this will
+     * return the default value. If it is a key that doesn't have an
+     * attached value, it will return 0. Otherwise, it will return
+     * the appropriate value.
+     *
+     * @param caster   the caster of the skill
+     * @param key      key of the value
+     * @param fallback fallback value in case the settings don't have it
+     *
+     * @return the settings value or, if not a number, the cast data value
+     */
+    protected double getNum(LivingEntity caster, String key, double fallback)
+    {
+        String val = settings.getString(key);
+        if (val == null)
+        {
+            return fallback;
+        }
+        else if (NUMBER.matcher(val).matches())
+        {
+            return Double.parseDouble(val);
+        }
+        else if (RANGE.matcher(val).matches())
+        {
+            int mid = val.indexOf('-', 1);
+            double min = Double.parseDouble(val.substring(0, mid));
+            double max = Double.parseDouble(val.substring(mid + 1));
+            return Math.random() * (max - min) + min;
+        }
+        else
+        {
+            HashMap<String, Object> map = DynamicSkill.getCastData(caster);
+            if (map.containsKey(val))
+            {
+                String mapVal = map.get(val).toString();
+                if (NUMBER.matcher(mapVal).matches())
+                {
+                    return Double.parseDouble(mapVal);
+                }
+            }
+            return 0;
+        }
     }
 
     /**
@@ -159,11 +209,11 @@ public abstract class EffectComponent
      *
      * @param config config to save to
      */
-    public void save(ConfigurationSection config)
+    public void save(DataSection config)
     {
         config.set(TYPE, type);
         settings.save(config.createSection("data"));
-        ConfigurationSection children = config.createSection("children");
+        DataSection children = config.createSection("children");
         for (EffectComponent child : this.children)
         {
             child.save(children.createSection(child.key));
@@ -176,14 +226,14 @@ public abstract class EffectComponent
      * @param skill  owning skill of the component
      * @param config config data to load from
      */
-    public void load(DynamicSkill skill, ConfigurationSection config)
+    public void load(DynamicSkill skill, DataSection config)
     {
         this.skill = skill;
         if (config == null)
         {
             return;
         }
-        settings.load(config.getConfigurationSection("data"));
+        settings.load(config.getSection("data"));
         if (settings.has(ICON_KEY))
         {
             String key = settings.getString(ICON_KEY);
@@ -193,12 +243,12 @@ public abstract class EffectComponent
             }
         }
 
-        ConfigurationSection children = config.getConfigurationSection("children");
+        DataSection children = config.getSection("children");
         if (children != null)
         {
-            for (String key : children.getKeys(false))
+            for (String key : children.keys())
             {
-                String type = children.getConfigurationSection(key).getString(TYPE, "missing").toLowerCase();
+                String type = children.getSection(key).getString(TYPE, "missing").toLowerCase();
                 HashMap<String, Class<? extends EffectComponent>> map;
                 if (type.equals("target"))
                 {
@@ -225,7 +275,7 @@ public abstract class EffectComponent
                         EffectComponent child = map.get(mkey).newInstance();
                         child.key = key;
                         child.type = type;
-                        child.load(skill, children.getConfigurationSection(key));
+                        child.load(skill, children.getSection(key));
                         this.children.add(child);
                     }
                     catch (Exception ex)
@@ -249,13 +299,16 @@ public abstract class EffectComponent
             put("linear", LinearTarget.class);
             put("location", LocationTarget.class);
             put("nearest", NearestTarget.class);
+            put("remember", RememberTarget.class);
             put("self", SelfTarget.class);
             put("single", SingleTarget.class);
         }};
 
     private static final HashMap<String, Class<? extends EffectComponent>> conditions = new HashMap<String, Class<? extends EffectComponent>>()
     {{
+            put("attribute", AttributeCondition.class);
             put("biome", BiomeCondition.class);
+            put("block", BlockCondition.class);
             put("chance", ChanceCondition.class);
             put("class", ClassCondition.class);
             put("class level", ClassLevelCondition.class);
@@ -276,6 +329,7 @@ public abstract class EffectComponent
             put("status", StatusCondition.class);
             put("time", TimeCondition.class);
             put("tool", ToolCondition.class);
+            put("value", ValueCondition.class);
             put("water", WaterCondition.class);
         }};
 
@@ -304,6 +358,7 @@ public abstract class EffectComponent
             put("mana", ManaMechanic.class);
             put("message", MessageMechanic.class);
             put("particle", ParticleMechanic.class);
+            put("particle animation", ParticleAnimationMechanic.class);
             put("particle projectile", ParticleProjectileMechanic.class);
             put("passive", PassiveMechanic.class);
             put("permission", PermissionMechanic.class);
@@ -312,15 +367,23 @@ public abstract class EffectComponent
             put("projectile", ProjectileMechanic.class);
             put("purge", PurgeMechanic.class);
             put("push", PushMechanic.class);
+            put("remember", RememberTargetsMechanic.class);
             put("repeat", RepeatMechanic.class);
             put("speed", SpeedMechanic.class);
             put("sound", SoundMechanic.class);
             put("status", StatusMechanic.class);
+            put("value add", ValueAddMechanic.class);
+            put("value attribute", ValueAttributeMechanic.class);
+            put("value location", ValueLocationMechanic.class);
+            put("value lore", ValueLoreMechanic.class);
+            put("value multiply", ValueMultiplyMechanic.class);
+            put("value set", ValueSetMechanic.class);
             put("warp", WarpMechanic.class);
             put("warp location", WarpLocMechanic.class);
             put("warp random", WarpRandomMechanic.class);
             put("warp swap", WarpSwapMechanic.class);
             put("warp target", WarpTargetMechanic.class);
+            put("warp value", WarpValueMechanic.class);
             put("wolf", WolfMechanic.class);
         }};
 }
